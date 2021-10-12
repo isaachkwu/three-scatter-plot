@@ -21,9 +21,12 @@ const ScatterPlot = ({
 
         // 0. helper functions
         const toRadians = (angle) => angle * (Math.PI / 180);
+        const isArrayLengthEquals = () => id.length == x.length && id.length == y.length && id.length == group.length
         
+        // TODO: check assertion: WEBGL compatibility and array length equals
+
         // 1. create camera, scene, renderer
-        const fov = 75, near = 0.1, far = 10, aspect = width / height;
+        const fov = 75, near = 0.1, far = 100000, aspect = width / height;
         const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x666666);
@@ -71,17 +74,27 @@ const ScatterPlot = ({
 
         // 3. create geometry, material, and points
         const geometry = new THREE.BufferGeometry();
-
-        const material = new THREE.PointsMaterial({ color: 0xdd6666 });
-        const cube = new THREE.Mesh(geometry, material);
-        scene.add(cube);
+        // assert length of all array are the same
+        
+        const vectors = x.map((x, i) => new THREE.Vector3(x, y[i], 0));
+        geometry.setFromPoints(vectors);
+        const circle_sprite= new THREE.TextureLoader().load(
+            "https://fastforwardlabs.github.io/visualization_assets/circle-sprite.png"
+          );
+        const pointsMaterial = new THREE.PointsMaterial({
+            size: 4,
+            color: 0x00ff00,
+            sizeAttenuation: false,
+            map: circle_sprite,
+            transparent: true
+        });
+        const points = new THREE.Points(geometry, pointsMaterial);
+        scene.add(points);
 
         // 4. animate and apply zoom handler
         function animate() {
             requestAnimationFrame( animate );
             renderer.render( scene, camera );
-            cube.rotation.x += 0.01;
-            cube.rotation.y += 0.01;
         }
         if ( WEBGL.isWebGLAvailable() ) {
             animate();
