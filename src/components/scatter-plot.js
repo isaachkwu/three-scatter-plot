@@ -4,7 +4,7 @@ import { WEBGL } from 'three/examples/jsm/WebGL'
 import * as d3 from 'd3';
 
 import useWindowDimension from '../hooks/useWindowDimension';
-import defaultColors40 from '../data/colors-40.json'
+import defaultColors from '../data/colors-1500.json'
 
 const ScatterPlot = ({
     id = [],
@@ -21,7 +21,7 @@ const ScatterPlot = ({
 
         // 0. helper functions
         const toRadians = (angle) => angle * (Math.PI / 180);
-        const isArrayLengthEquals = () => id.length == x.length && id.length == y.length && id.length == group.length
+        const isArrayLengthEquals = () => id.length === x.length && id.length === y.length && id.length === group.length
         
         // TODO: check assertion: WEBGL compatibility and array length equals
 
@@ -74,17 +74,26 @@ const ScatterPlot = ({
 
         // 3. create geometry, material, and points
         const geometry = new THREE.BufferGeometry();
-        // assert length of all array are the same
-        
         const vectors = x.map((x, i) => new THREE.Vector3(x, y[i], 0));
-        geometry.setFromPoints(vectors);
+        const uniqueGroup = [...new Set(group)];
+        console.log(uniqueGroup)
+        const colors = [];
+        for(const gp of group) {
+            const c = new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(gp) % defaultColors.colors.length])
+            colors.push(c.r);
+            colors.push(c.g);
+            colors.push(c.b);
+        }
+        geometry.setFromPoints(vectors)
+        geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
         const circle_sprite= new THREE.TextureLoader().load(
             "https://fastforwardlabs.github.io/visualization_assets/circle-sprite.png"
           );
         const pointsMaterial = new THREE.PointsMaterial({
             size: 4,
-            color: 0x00ff00,
+            // color: 0x00ff00,
             sizeAttenuation: false,
+            vertexColors: true,
             map: circle_sprite,
             transparent: true
         });
