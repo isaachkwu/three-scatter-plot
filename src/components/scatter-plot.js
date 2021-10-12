@@ -26,10 +26,10 @@ const ScatterPlot = ({
         // TODO: check assertion: WEBGL compatibility and array length equals
 
         // 1. create camera, scene, renderer
-        const fov = 75, near = 0.1, far = 100000, aspect = width / height;
+        const fov = 75, near = 0.1, far = 250, aspect = width / height;
         const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x666666);
+        scene.background = new THREE.Color(0xffffff);
         const renderer = new THREE.WebGLRenderer();
         renderer.setSize(width, height );
         mount.appendChild(renderer.domElement)
@@ -50,12 +50,14 @@ const ScatterPlot = ({
             let camera_z_position = scale_height / (2 * Math.tan(half_fov_radians));
             return camera_z_position;
         }
+        const centerX = (d3.max(x) + d3.min(x)) / 2;
+        const centerY = (d3.max(y) + d3.min(y)) / 2;
         const zoomHandler = (d3_transform) => {
             let scale = d3_transform.k;
-            let x = -(d3_transform.x - width / 2) / scale;
-            let y = (d3_transform.y - height / 2) / scale;
-            let z = getZFromScale(scale);
-            camera.position.set(x, y, z);
+            let _x = -(d3_transform.x - width / 2) / scale;
+            let _y = (d3_transform.y - height / 2) / scale;
+            let _z = getZFromScale(scale);
+            camera.position.set(_x, _y, _z);
         }
         const d3_zoom = d3.zoom()
             .scaleExtent([getScaleFromZ(far), getScaleFromZ(near)])
@@ -74,9 +76,16 @@ const ScatterPlot = ({
 
         // 3. create geometry, material, and points
         const geometry = new THREE.BufferGeometry();
-        const vectors = x.map((x, i) => new THREE.Vector3(x, y[i], 0));
+
+        const xScale = d3.scaleLinear()
+            .domain([d3.min(x), d3.max(x)])
+            .range([-400, 400]);
+        const yScale = d3.scaleLinear()
+            .domain([d3.min(y), d3.max(y)])
+            .range([-100, 100]);
+        const vectors = x.map((x, i) => new THREE.Vector3(xScale(x), yScale(y[i]), 0));
         const uniqueGroup = [...new Set(group)];
-        console.log(uniqueGroup)
+        // console.log(uniqueGroup)
         const colors = [];
         for(const gp of group) {
             const c = new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(gp) % defaultColors.colors.length])
@@ -91,7 +100,6 @@ const ScatterPlot = ({
           );
         const pointsMaterial = new THREE.PointsMaterial({
             size: 4,
-            // color: 0x00ff00,
             sizeAttenuation: false,
             vertexColors: true,
             map: circle_sprite,
@@ -100,7 +108,35 @@ const ScatterPlot = ({
         const points = new THREE.Points(geometry, pointsMaterial);
         scene.add(points);
 
-        // 4. animate and apply zoom handler
+        // 4. craete hover interaction
+        // const raycaster = new THREE.Raycaster();
+        // raycaster.params.Points.threshold = 4;
+        // const mouseToThree = (mouseX, mouseY) => (
+        //     new THREE.Vector3(
+        //         mouseX / width * 2,
+        //         -(mouseY / height) * 2,
+        //         1
+        //     )
+        // )
+        // const setUpHover = () => {
+        //     const view = d3.select(renderer.domElement)
+        //         .on("mousemove", (event) => {
+        //             const [mouseX, mouseY] = d3.pointer(event);
+        //             const mousePosition = [mouseX, mouseY]
+        //             // console.log(mouseToThree)
+        //             checkIntersects(mousePosition);
+        //         })
+        // }
+        // const checkIntersects = (mousePosition) => {
+        //     const mouseVector = mouseToThree(...mousePosition);
+        //     raycaster.setFromCamera(mouseVector, camera);
+        //     const intersects = raycaster.intersectObject(points);
+        //     if (intersects[0]) {
+        //         console.log(intersects[0])
+        //     }
+        // }
+
+        // 5. animate and apply zoom handler
         function animate() {
             requestAnimationFrame( animate );
             renderer.render( scene, camera );
@@ -108,6 +144,7 @@ const ScatterPlot = ({
         if ( WEBGL.isWebGLAvailable() ) {
             animate();
             setUpZoom();
+            // setUpHover();
         } else {
             mount.appendChild( WEBGL.getWebGLErrorMessage() );
         }
