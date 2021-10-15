@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { WEBGL } from 'three/examples/jsm/WebGL'
 import * as d3 from 'd3';
@@ -12,6 +12,9 @@ const ScatterPlot = ({
     optimizedRendering = false
 }) => {
     const { width, height } = useWindowDimension();
+    const [selectedNode, setSelectedNode] = useState(null);
+    const [mousePosition, setMousePosition] = useState(null);
+    const [selectedNodeColor, setSelectedNodeColor] = useState(null);
     const mountRef = useRef(null);
 
     useEffect(() => {
@@ -26,7 +29,7 @@ const ScatterPlot = ({
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xcccccc);
         const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(width, height );
+        renderer.setSize(width, height);
         mount.appendChild(renderer.domElement)
 
         // 2. create zoom/pan handler
@@ -81,7 +84,7 @@ const ScatterPlot = ({
         const uniqueGroup = [...new Set(nodes.map(node => node.group))];
         // console.log(uniqueGroup)
         const colors = [];
-        for(const node of nodes) {
+        for (const node of nodes) {
             if (node.group === '') {
                 colors.push(0, 0, 0) //black node is for nodes with no group assigned
             } else {
@@ -91,15 +94,15 @@ const ScatterPlot = ({
         }
         geometry.setFromPoints(vectors)
         geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
-        const circle_sprite= new THREE.TextureLoader().load(
+        const circle_sprite = new THREE.TextureLoader().load(
             "https://fastforwardlabs.github.io/visualization_assets/circle-sprite.png"
-          );
+        );
         const pointsMaterial = new THREE.PointsMaterial({
             size: 4,
             sizeAttenuation: false,
             vertexColors: true,
             map: circle_sprite,
-            transparent: true
+            transparent: true,
         });
         const points = new THREE.Points(geometry, pointsMaterial);
         scene.add(points);
@@ -113,9 +116,9 @@ const ScatterPlot = ({
             branches.horizontal.forEach(pair => {
                 const y = yScale(pair[0])
                 const x0 = xScale(pair[1])
-                const x1 = xScale(pair[2]) 
+                const x1 = xScale(pair[2])
                 linePoints.push(
-                    new THREE.Vector3(x0, y, 0), 
+                    new THREE.Vector3(x0, y, 0),
                     new THREE.Vector3(x1, y, 0))
             })
         }
@@ -123,9 +126,9 @@ const ScatterPlot = ({
             branches.vertical.forEach(pair => {
                 const x = xScale(pair[0])
                 const y0 = yScale(pair[1])
-                const y1 = yScale(pair[2]) 
+                const y1 = yScale(pair[2])
                 linePoints.push(
-                    new THREE.Vector3(x, y0, 0), 
+                    new THREE.Vector3(x, y0, 0),
                     new THREE.Vector3(x, y1, 0)
                 )
             });
@@ -133,45 +136,102 @@ const ScatterPlot = ({
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
         const lineSeg = new THREE.LineSegments(lineGeometry, lineMaterial);
         scene.add(lineSeg)
-        // 5. craete hover interaction
-        // const raycaster = new THREE.Raycaster();
-        // raycaster.params.Points.threshold = 4;
-        // const mouseToThree = (mouseX, mouseY) => (
-        //     new THREE.Vector3(
-        //         mouseX / width * 2,
-        //         -(mouseY / height) * 2,
-        //         1
-        //     )
-        // )
-        // const setUpHover = () => {
-        //     const view = d3.select(renderer.domElement)
-        //         .on("mousemove", (event) => {
-        //             const [mouseX, mouseY] = d3.pointer(event);
-        //             const mousePosition = [mouseX, mouseY]
-        //             // console.log(mouseToThree)
-        //             checkIntersects(mousePosition);
-        //         })
-        // }
-        // const checkIntersects = (mousePosition) => {
-        //     const mouseVector = mouseToThree(...mousePosition);
-        //     raycaster.setFromCamera(mouseVector, camera);
-        //     const intersects = raycaster.intersectObject(points);
-        //     if (intersects[0]) {
-        //         console.log(intersects[0])
-        //     }
-        // }
 
-        // 5. animate and apply zoom handler
-        function animate() {
-            requestAnimationFrame( animate );
-            renderer.render( scene, camera );
+        // 5. craete hover interaction
+        const raycaster = new THREE.Raycaster();
+        raycaster.params.Points.threshold = 6;
+        const mouseToThree = (mouseX, mouseY) => (
+            new THREE.Vector3(
+                mouseX / width * 2 - 1,
+                -(mouseY / height) * 2 + 1,
+                1
+            )
+        )
+        const setUpHover = () => {
+            const view = d3.select(renderer.domElement)
+                .on("mousemove", (event) => {
+                    const [mouseX, mouseY] = d3.pointer(event);
+                    const mousePosition = [mouseX, mouseY]
+                    // console.log(mouseToThree)
+                    checkIntersects(mousePosition);
+                })
+                .on("mouseleave", () => {
+                    removeHighlight()
+                    hideTooltip();
+                })
         }
-        if ( WEBGL.isWebGLAvailable() ) {
+        const checkIntersects = (mousePosition) => {
+            const mouseVector = mouseToThree(...mousePosition);
+            raycaster.setFromCamera(mouseVector, camera);
+            const intersects = raycaster.intersectObject(points);
+            if (intersects[0]) {
+                const firstIntersect = intersects.sort((a, b) => {
+                    if (a.distanceToRay < b.distanceToRay) {
+                        return -1
+                    }
+                    if (a.distanceToRay > b.distanceToRay) {
+                        return 1
+                    }
+                    return 0
+                })[0]
+                const selectedNode = nodes[firstIntersect.index];
+                // console.log(selectedNode)
+                highlightPoint(selectedNode);
+                showTooltip(mousePosition, selectedNode);
+            } else {
+                removeHighlight();
+                hideTooltip();
+            }
+        }
+        const hoverContainer = new THREE.Object3D();
+        scene.add(hoverContainer);
+        const highlightPoint = (node) => {
+            removeHighlight();
+            const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(xScale(node.x), yScale(node.y), 0)]);
+            const c = node.group === '' ? '#000000' : new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(node.group) % defaultColors.colors.length])
+            geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array([
+                c.r, c.g, c.b
+            ]), 3))
+            const pointMaterial = new THREE.PointsMaterial({
+                size: 12,
+                sizeAttenuation: false,
+                vertexColors: true,
+                map: circle_sprite,
+                transparent: true,
+            });
+            const point = new THREE.Points(geometry, pointMaterial);
+            hoverContainer.add(point);
+        }
+
+        const removeHighlight = () => {
+            hoverContainer.remove(...hoverContainer.children)
+        }
+
+        const showTooltip = (mousePosition, node) => {
+            setSelectedNode(node);
+            const c = node.group === '' ? '#000000' : defaultColors.colors[uniqueGroup.indexOf(node.group) % defaultColors.colors.length]
+            setSelectedNodeColor(c);
+            setMousePosition(mousePosition)
+        }
+
+        const hideTooltip = () => {
+            setSelectedNode(null);
+            setSelectedNodeColor(null);
+            setMousePosition(null)
+        }
+
+        // 6. animate and apply zoom handler
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        if (WEBGL.isWebGLAvailable()) {
             animate();
             setUpZoom();
-            // setUpHover();
+            setUpHover();
+
         } else {
-            mount.appendChild( WEBGL.getWebGLErrorMessage() );
+            mount.appendChild(WEBGL.getWebGLErrorMessage());
         }
 
         return () => {
@@ -181,13 +241,44 @@ const ScatterPlot = ({
 
     }, [nodes, branches, optimizedRendering, height, width])
 
-    return <div style={styles.container} ref={mountRef} />
+    const tooltipWidth = 120
+    const tooltipXOffset = -tooltipWidth / 2;
+    const tooltipYOffset = 30
+    return <>
+        <div style={{
+            display: selectedNode ? "flex" : "none",
+            position: "absolute",
+            left: mousePosition ? mousePosition[0] + tooltipXOffset : 0,
+            top: mousePosition ? mousePosition[1] + tooltipYOffset : 0,
+            ...styles.tooltip
+        }}>
+            ID: {selectedNode && selectedNode.id}
+            <br />
+            <div style={{
+                color: selectedNode && selectedNode.group === '' ? 'white' : 'black',
+                backgroundColor: selectedNodeColor ? selectedNodeColor : 'white',
+                ...styles.groupBox
+            }}>
+                Group: {selectedNode && selectedNode.group}
+            </div>
+        </div>
+        <div style={styles.container} ref={mountRef} />
+    </>
 }
 
 const styles = {
     container: {
         margin: 0,
         padding: 0,
+    },
+    tooltip: {
+        backgroundColor: 'white',
+        padding: 8,
+        flexDirection: 'column',
+        alignItems: 'stretch'
+    },
+    groupBox: {
+        padding: 4,
     }
 }
 
