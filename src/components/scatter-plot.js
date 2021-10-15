@@ -4,13 +4,11 @@ import { WEBGL } from 'three/examples/jsm/WebGL'
 import * as d3 from 'd3';
 
 import useWindowDimension from '../hooks/useWindowDimension';
-import defaultColors from '../data/colors-1500.json'
+import defaultColors from '../data/colors-1400.json'
 
 const ScatterPlot = ({
-    id = [],
-    x = [],
-    y = [],
-    group = [],
+    nodes = [],
+    branches = [],
     optimizedRendering = false
 }) => {
     const { width, height } = useWindowDimension();
@@ -21,15 +19,12 @@ const ScatterPlot = ({
 
         // 0. helper functions
         const toRadians = (angle) => angle * (Math.PI / 180);
-        const isArrayLengthEquals = () => id.length === x.length && id.length === y.length && id.length === group.length
-        
-        // TODO: check assertion: WEBGL compatibility and array length equals
 
         // 1. create camera, scene, renderer
-        const fov = 75, near = 0.1, far = 250, aspect = width / height;
+        const fov = 75, near = 0.1, far = 600, aspect = width / height;
         const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xffffff);
+        scene.background = new THREE.Color(0xcccccc);
         const renderer = new THREE.WebGLRenderer();
         renderer.setSize(width, height );
         mount.appendChild(renderer.domElement)
@@ -50,8 +45,6 @@ const ScatterPlot = ({
             let camera_z_position = scale_height / (2 * Math.tan(half_fov_radians));
             return camera_z_position;
         }
-        const centerX = (d3.max(x) + d3.min(x)) / 2;
-        const centerY = (d3.max(y) + d3.min(y)) / 2;
         const zoomHandler = (d3_transform) => {
             let scale = d3_transform.k;
             let _x = -(d3_transform.x - width / 2) / scale;
@@ -74,24 +67,27 @@ const ScatterPlot = ({
             camera.position.set(0, 0, far)
         }
 
-        // 3. create geometry, material, and points
+        // 3. create nodes
         const geometry = new THREE.BufferGeometry();
-
+        const xExtent = d3.extent(nodes, node => node.x);
+        const yExtent = d3.extent(nodes, node => node.y);
         const xScale = d3.scaleLinear()
-            .domain([d3.min(x), d3.max(x)])
+            .domain(xExtent)
             .range([-400, 400]);
         const yScale = d3.scaleLinear()
-            .domain([d3.min(y), d3.max(y)])
-            .range([-100, 100]);
-        const vectors = x.map((x, i) => new THREE.Vector3(xScale(x), yScale(y[i]), 0));
-        const uniqueGroup = [...new Set(group)];
+            .domain(yExtent)
+            .range([-300, 300]);
+        const vectors = nodes.map((node) => new THREE.Vector3(xScale(node.x), yScale(node.y), 0));
+        const uniqueGroup = [...new Set(nodes.map(node => node.group))];
         // console.log(uniqueGroup)
         const colors = [];
-        for(const gp of group) {
-            const c = new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(gp) % defaultColors.colors.length])
-            colors.push(c.r);
-            colors.push(c.g);
-            colors.push(c.b);
+        for(const node of nodes) {
+            if (node.group === '') {
+                colors.push(0, 0, 0) //black node is for nodes with no group assigned
+            } else {
+                const c = new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(node.group) % defaultColors.colors.length])
+                colors.push(c.r, c.g, c.b);
+            }
         }
         geometry.setFromPoints(vectors)
         geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
@@ -108,7 +104,36 @@ const ScatterPlot = ({
         const points = new THREE.Points(geometry, pointsMaterial);
         scene.add(points);
 
-        // 4. craete hover interaction
+        // 4. Create branches
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0x000000
+        });
+        const linePoints = []
+        if (branches.horizontal !== undefined) {
+            branches.horizontal.forEach(pair => {
+                const y = yScale(pair[0])
+                const x0 = xScale(pair[1])
+                const x1 = xScale(pair[2]) 
+                linePoints.push(
+                    new THREE.Vector3(x0, y, 0), 
+                    new THREE.Vector3(x1, y, 0))
+            })
+        }
+        if (branches.vertical !== undefined) {
+            branches.vertical.forEach(pair => {
+                const x = xScale(pair[0])
+                const y0 = yScale(pair[1])
+                const y1 = yScale(pair[2]) 
+                linePoints.push(
+                    new THREE.Vector3(x, y0, 0), 
+                    new THREE.Vector3(x, y1, 0)
+                )
+            });
+        }
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
+        const lineSeg = new THREE.LineSegments(lineGeometry, lineMaterial);
+        scene.add(lineSeg)
+        // 5. craete hover interaction
         // const raycaster = new THREE.Raycaster();
         // raycaster.params.Points.threshold = 4;
         // const mouseToThree = (mouseX, mouseY) => (
@@ -154,7 +179,7 @@ const ScatterPlot = ({
             mount.removeChild(renderer.domElement);
         }
 
-    }, [width, x, y, id, group, optimizedRendering, height])
+    }, [nodes, branches, optimizedRendering, height, width])
 
     return <div style={styles.container} ref={mountRef} />
 }

@@ -7,6 +7,11 @@ import ScatterPlot from './components/scatter-plot';
 import testData from './data/testdata-10.json'
 import RealData from './data/100k_trial.json'
 
+// data v2
+import nodes from './data/100k_trial_nodes.json';
+import branches from './data/100k_trial_branches.json';
+
+
 function App() {
   return (
     <div className="App">
@@ -18,10 +23,14 @@ function App() {
         // group={testData.group}
 
         // real mil test
-        id={RealData.id}
-        x={RealData.x}
-        y={RealData.y}
-        group={RealData.group}
+        // id={RealData.id}
+        // x={RealData.x}
+        // y={RealData.y}
+        // group={RealData.group}
+
+        // data v2
+        nodes={nodes}
+        branches={branches}
       />
     </div>
   );
