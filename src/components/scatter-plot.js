@@ -264,7 +264,7 @@ const ScatterPlot = ({
                 orientation="horizontal"
                 min={1}
                 max={100}
-                title='Horizontal lider'
+                title='Horizontal slider'
                 onChange={onChangeXSlider}
             />
         </div>
@@ -273,7 +273,7 @@ const ScatterPlot = ({
                 orientation="vertical"
                 min={1}
                 max={100}
-                title='Vertical lider'
+                title='Vertical slider'
                 onChange={onChangeYSlider}
             />
         </div>
