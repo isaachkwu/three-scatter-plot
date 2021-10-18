@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { WEBGL } from 'three/examples/jsm/WebGL'
 import * as d3 from 'd3';
 
+import DebounceSlider from './DebounceSlider';
+
 import useWindowDimension from '../hooks/useWindowDimension';
 import defaultColors from '../data/colors-1400.json'
 
@@ -15,6 +17,18 @@ const ScatterPlot = ({
     const [selectedNode, setSelectedNode] = useState(null);
     const [mousePosition, setMousePosition] = useState(null);
     const [selectedNodeColor, setSelectedNodeColor] = useState(null);
+
+    const [xScaleControl, setXScaleControl] = useState(50);
+    const [yScaleControl, setYScaleControl] = useState(50);
+
+    const onChangeXSlider = (e) => {
+        setXScaleControl(e.target.value);
+    }
+
+    const onChangeYSlider = (e) => {
+        setYScaleControl(e.target.value);
+    }
+
     const mountRef = useRef(null);
 
     useEffect(() => {
@@ -76,10 +90,10 @@ const ScatterPlot = ({
         const yExtent = d3.extent(nodes, node => node.y);
         const xScale = d3.scaleLinear()
             .domain(xExtent)
-            .range([-400, 400]);
+            .range([-xScaleControl * 8, xScaleControl * 8]);
         const yScale = d3.scaleLinear()
             .domain(yExtent)
-            .range([-300, 300]);
+            .range([-yScaleControl * 6, yScaleControl * 6]);
         const vectors = nodes.map((node) => new THREE.Vector3(xScale(node.x), yScale(node.y), 0));
         const uniqueGroup = [...new Set(nodes.map(node => node.group))];
         // console.log(uniqueGroup)
@@ -239,12 +253,30 @@ const ScatterPlot = ({
             mount.removeChild(renderer.domElement);
         }
 
-    }, [nodes, branches, optimizedRendering, height, width])
+    }, [nodes, branches, optimizedRendering, height, width, xScaleControl, yScaleControl])
 
     const tooltipWidth = 120
     const tooltipXOffset = -tooltipWidth / 2;
     const tooltipYOffset = 30
     return <>
+        <div style={styles.xSliderContainer}>
+            <DebounceSlider
+                orientation="horizontal"
+                min={1}
+                max={100}
+                title='Horizontal lider'
+                onChange={onChangeXSlider}
+            />
+        </div>
+        <div style={styles.ySliderContainer}>
+            <DebounceSlider
+                orientation="vertical"
+                min={1}
+                max={100}
+                title='Vertical lider'
+                onChange={onChangeYSlider}
+            />
+        </div>
         <div style={{
             display: selectedNode ? "flex" : "none",
             position: "absolute",
@@ -279,6 +311,57 @@ const styles = {
     },
     groupBox: {
         padding: 4,
+    },
+    xSliderContainer: {
+        position: 'absolute',
+        bottom: 8,
+        left: 0,
+        width: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center'
+    },
+    ySliderContainer: {
+        position: 'absolute',
+        left: 8,
+        top: 0,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'center'
+    },
+    xSliderTitle: {
+        // backgroundColor: '#00ff00',
+        textAlign: 'left'
+    },
+    ySliderTitle: {
+        transform: 'rotate(90deg)',
+        height: '20px',
+        transformOrigin: '10px 10px',
+        // backgroundColor: '#00ff00',
+        display: 'inline-block',
+        textAlign: 'left'
+    },
+    xSlider: {
+        width: 300,
+        height: 20
+    }, 
+    ySlider: {
+        height: 300,
+        width: 20,
+        '-webkit-appearance': 'slider-vertical',
+        writingMode: 'bt-lr',
+        orient: "vertical"
+    },
+    xInnerSliderContainer: {
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'align-start'
+    },
+    yInnerSliderContainer: {
+        display: 'flex',
+        flexDirection: 'row',
+        alignItems: 'align-start'
     }
 }
 
