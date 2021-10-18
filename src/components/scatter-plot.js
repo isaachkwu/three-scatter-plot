@@ -21,6 +21,16 @@ const ScatterPlot = ({
     const [xScaleControl, setXScaleControl] = useState(50);
     const [yScaleControl, setYScaleControl] = useState(50);
 
+    const branchObject = useRef(null);
+    const nodeObject = useRef(null);
+    const scene = useRef(null);
+    const xScale = useRef(null);
+    const yScale = useRef(null);
+    const uniqueGroup = useRef(null);
+    const circle_sprite = useRef(new THREE.TextureLoader().load(
+        "https://fastforwardlabs.github.io/visualization_assets/circle-sprite.png"
+    ));
+
     const onChangeXSlider = (e) => {
         setXScaleControl(e.target.value);
     }
@@ -40,8 +50,8 @@ const ScatterPlot = ({
         // 1. create camera, scene, renderer
         const fov = 75, near = 0.1, far = 600, aspect = width / height;
         const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xcccccc);
+        scene.current = new THREE.Scene();
+        scene.current.background = new THREE.Color(0xcccccc);
         const renderer = new THREE.WebGLRenderer();
         renderer.setSize(width, height);
         mount.appendChild(renderer.domElement)
@@ -108,9 +118,6 @@ const ScatterPlot = ({
         }
         geometry.setFromPoints(vectors)
         geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
-        const circle_sprite = new THREE.TextureLoader().load(
-            "https://fastforwardlabs.github.io/visualization_assets/circle-sprite.png"
-        );
         const pointsMaterial = new THREE.PointsMaterial({
             size: 4,
             sizeAttenuation: false,
@@ -118,8 +125,8 @@ const ScatterPlot = ({
             map: circle_sprite,
             transparent: true,
         });
-        const points = new THREE.Points(geometry, pointsMaterial);
-        scene.add(points);
+        const nodeObject = new THREE.Points(geometry, pointsMaterial);
+        scene.current.add(nodeObject);
 
         // 4. Create branches
         const lineMaterial = new THREE.LineBasicMaterial({
@@ -148,8 +155,8 @@ const ScatterPlot = ({
             });
         }
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
-        const lineSeg = new THREE.LineSegments(lineGeometry, lineMaterial);
-        scene.add(lineSeg)
+        const branchObject = new THREE.LineSegments(lineGeometry, lineMaterial);
+        scene.current.add(branchObject)
 
         // 5. craete hover interaction
         const raycaster = new THREE.Raycaster();
@@ -177,7 +184,7 @@ const ScatterPlot = ({
         const checkIntersects = (mousePosition) => {
             const mouseVector = mouseToThree(...mousePosition);
             raycaster.setFromCamera(mouseVector, camera);
-            const intersects = raycaster.intersectObject(points);
+            const intersects = raycaster.intersectObject(nodeObject);
             if (intersects[0]) {
                 const firstIntersect = intersects.sort((a, b) => {
                     if (a.distanceToRay < b.distanceToRay) {
@@ -198,7 +205,7 @@ const ScatterPlot = ({
             }
         }
         const hoverContainer = new THREE.Object3D();
-        scene.add(hoverContainer);
+        scene.current.add(hoverContainer);
         const highlightPoint = (node) => {
             removeHighlight();
             const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(xScale(node.x), yScale(node.y), 0)]);
@@ -237,7 +244,7 @@ const ScatterPlot = ({
         // 6. animate and apply zoom handler
         function animate() {
             requestAnimationFrame(animate);
-            renderer.render(scene, camera);
+            renderer.render(scene.current, camera);
         }
         if (WEBGL.isWebGLAvailable()) {
             animate();
@@ -253,7 +260,76 @@ const ScatterPlot = ({
             mount.removeChild(renderer.domElement);
         }
 
-    }, [nodes, branches, optimizedRendering, height, width, xScaleControl, yScaleControl])
+    }, [nodes, branches, optimizedRendering, height, width])
+
+    useEffect(() => {
+         // 3. create nodes
+         const geometry = new THREE.BufferGeometry();
+         const xExtent = d3.extent(nodes, node => node.x);
+         const yExtent = d3.extent(nodes, node => node.y);
+         const xScale = d3.scaleLinear()
+             .domain(xExtent)
+             .range([-xScaleControl * 8, xScaleControl * 8]);
+         const yScale = d3.scaleLinear()
+             .domain(yExtent)
+             .range([-yScaleControl * 6, yScaleControl * 6]);
+         const vectors = nodes.map((node) => new THREE.Vector3(xScale(node.x), yScale(node.y), 0));
+         const uniqueGroup = [...new Set(nodes.map(node => node.group))];
+         // console.log(uniqueGroup)
+         const colors = [];
+         for (const node of nodes) {
+             if (node.group === '') {
+                 colors.push(0, 0, 0) //black node is for nodes with no group assigned
+             } else {
+                 const c = new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(node.group) % defaultColors.colors.length])
+                 colors.push(c.r, c.g, c.b);
+             }
+         }
+         geometry.setFromPoints(vectors)
+         geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
+         const circle_sprite = new THREE.TextureLoader().load(
+             "https://fastforwardlabs.github.io/visualization_assets/circle-sprite.png"
+         );
+         const pointsMaterial = new THREE.PointsMaterial({
+             size: 4,
+             sizeAttenuation: false,
+             vertexColors: true,
+             map: circle_sprite,
+             transparent: true,
+         });
+         const nodeObject = new THREE.Points(geometry, pointsMaterial);
+         scene.current.add(nodeObject);
+ 
+         // 4. Create branches
+         const lineMaterial = new THREE.LineBasicMaterial({
+             color: 0x000000
+         });
+         const linePoints = []
+         if (branches.horizontal !== undefined) {
+             branches.horizontal.forEach(pair => {
+                 const y = yScale(pair[0])
+                 const x0 = xScale(pair[1])
+                 const x1 = xScale(pair[2])
+                 linePoints.push(
+                     new THREE.Vector3(x0, y, 0),
+                     new THREE.Vector3(x1, y, 0))
+             })
+         }
+         if (branches.vertical !== undefined) {
+             branches.vertical.forEach(pair => {
+                 const x = xScale(pair[0])
+                 const y0 = yScale(pair[1])
+                 const y1 = yScale(pair[2])
+                 linePoints.push(
+                     new THREE.Vector3(x, y0, 0),
+                     new THREE.Vector3(x, y1, 0)
+                 )
+             });
+         }
+         const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
+         const branchObject = new THREE.LineSegments(lineGeometry, lineMaterial);
+         scene.current.add(branchObject)
+    }, [ xScaleControl, yScaleControl])
 
     const tooltipWidth = 120
     const tooltipXOffset = -tooltipWidth / 2;
