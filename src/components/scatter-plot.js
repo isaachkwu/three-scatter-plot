@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { WEBGL } from 'three/examples/jsm/WebGL'
 import * as d3 from 'd3';
@@ -36,31 +36,35 @@ const ScatterPlot = ({
     const pointsRef = useRef(null);
     const branchesRef = useRef(null);
     const cameraRef = useRef(null);
+    const d3ZoomRef = useRef(null);
+    const rendererRef = useRef(null);
+
+    // 0. helper functions
+    const toRadians = (angle) => angle * (Math.PI / 180);
+    const fov = 75, near = 0.1, far = 600, aspect = width / height;
+
+    const getScaleFromZ = useCallback((camera_z_position) => {
+        let half_fov = fov / 2;
+        let half_fov_radians = toRadians(half_fov);
+        let half_fov_height = Math.tan(half_fov_radians) * camera_z_position;
+        let fov_height = half_fov_height * 2;
+        let scale = height / fov_height; // Divide visualization height by height derived from field of view
+        return scale;
+    }, [height])
 
     useEffect(() => {
         const mount = mountRef.current
 
-        // 0. helper functions
-        const toRadians = (angle) => angle * (Math.PI / 180);
-
         // 1. create camera, scene, renderer
-        const fov = 75, near = 0.1, far = 600, aspect = width / height;
         cameraRef.current = new THREE.PerspectiveCamera(fov, aspect, near, far);
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xcccccc);
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(width, height);
-        mount.appendChild(renderer.domElement)
+        rendererRef.current = new THREE.WebGLRenderer();
+        rendererRef.current.setSize(width, height);
+        mount.appendChild(rendererRef.current.domElement)
 
         // 2. create zoom/pan handler
-        const getScaleFromZ = (camera_z_position) => {
-            let half_fov = fov / 2;
-            let half_fov_radians = toRadians(half_fov);
-            let half_fov_height = Math.tan(half_fov_radians) * camera_z_position;
-            let fov_height = half_fov_height * 2;
-            let scale = height / fov_height; // Divide visualization height by height derived from field of view
-            return scale;
-        }
+
         const getZFromScale = (scale) => {
             let half_fov = fov / 2;
             let half_fov_radians = toRadians(half_fov);
@@ -76,19 +80,19 @@ const ScatterPlot = ({
             cameraRef.current.position.set(_x, _y, _z);
             // console.log(cameraRef.current.position)
         }
-        const d3_zoom = d3.zoom()
+        d3ZoomRef.current = d3.zoom()
             .scaleExtent([getScaleFromZ(far), getScaleFromZ(near)])
             .on('zoom', (event) => {
                 let d3_transform = event.transform;
                 zoomHandler(d3_transform);
             });
         const setUpZoom = () => {
-            const view = d3.select(renderer.domElement)
-                .call(d3_zoom);
+            const view = d3.select(rendererRef.current.domElement)
+                .call(d3ZoomRef.current);
             const initialScale = getScaleFromZ(far);
-            const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(initialScale);
-            d3_zoom.transform(view, initialTransform);
-            cameraRef.current.position.set(0, 0, far)
+            const initialTransform = d3.zoomIdentity.translate(width / 2  , height / 2).scale(initialScale);
+            d3ZoomRef.current.transform(view, initialTransform);
+            // cameraRef.current.position.set(0, 0, far)
         }
 
         // 3. create nodes
@@ -173,7 +177,7 @@ const ScatterPlot = ({
             )
         )
         const setUpHover = () => {
-            d3.select(renderer.domElement)
+            d3.select(rendererRef.current.domElement)
                 .on("mousemove", (event) => {
                     const [mouseX, mouseY] = d3.pointer(event);
                     const mousePosition = [mouseX, mouseY]
@@ -190,7 +194,7 @@ const ScatterPlot = ({
             raycaster.setFromCamera(mouseVector, cameraRef.current);
             const intersects = raycaster.intersectObject(pointsRef.current);
             if (intersects[0]) {
-                const firstIntersect = intersects.sort((a, b) => {
+                const sortedntersection = intersects.sort((a, b) => {
                     if (a.distanceToRay < b.distanceToRay) {
                         return -1
                     }
@@ -198,7 +202,9 @@ const ScatterPlot = ({
                         return 1
                     }
                     return 0
-                })[0]
+                })
+                // console.log(sortedntersection.map(e => e.distanceToRay))
+                const firstIntersect = sortedntersection[0]
                 const selectedNode = nodes[firstIntersect.index];
                 const scale = firstIntersect.object.scale
                 // console.log(scale)
@@ -250,7 +256,7 @@ const ScatterPlot = ({
         // 6. animate and apply zoom handler
         function animate() {
             requestAnimationFrame(animate);
-            renderer.render(scene, cameraRef.current);
+            rendererRef.current.render(scene, cameraRef.current);
         }
         if (WEBGL.isWebGLAvailable()) {
             animate();
@@ -263,31 +269,35 @@ const ScatterPlot = ({
 
         return () => {
             // clean up
-            mount.removeChild(renderer.domElement);
+            mount.removeChild(rendererRef.current.domElement);
         }
 
-    }, [nodes, branches, optimizedRendering, height, width])
+    }, [nodes, branches, optimizedRendering, height, width, aspect, getScaleFromZ])
 
     useEffect(() => {
         if (pointsRef.current !== null && branchesRef.current !== null) {
             const xRatio = xScaleControl / 50;
             const yRatio = yScaleControl / 50;
-            // const previousXScale = pointsRef.current.scale.x
-            // const previousYScale = branchesRef.current.scale.y
+            const previousXScale = pointsRef.current.scale.x
+            const previousYScale = branchesRef.current.scale.y
             pointsRef.current.scale.set(xRatio, yRatio, 1);
             branchesRef.current.scale.set(xRatio, yRatio, 1);
             
-            // const currentX = cameraRef.current.position.x
-            // const currentY = cameraRef.current.position.y
-            // const currentZ = cameraRef.current.position.z
-            // cameraRef.current.position.set(
-            //     currentX / previousXScale * xRatio,
-            //     currentY / previousYScale * yRatio,
-            //     currentZ
-            // )
-            // console.log(cameraRef.current.position)
+            const currentX = cameraRef.current.position.x
+            const currentY = cameraRef.current.position.y
+            const currentZ = cameraRef.current.position.z
+            cameraRef.current.position.set(
+                currentX / previousXScale * xRatio,
+                currentY / previousYScale * yRatio,
+                currentZ
+            )
+            
+            // const view = d3.select(rendererRef.current.domElement)
+            // const currentScale = getScaleFromZ(currentZ);
+            // const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(currentScale);
+            // d3ZoomRef.current.transform(view, initialTransform);
         }
-    }, [xScaleControl, yScaleControl])
+    }, [getScaleFromZ, height, width, xScaleControl, yScaleControl])
 
     const tooltipWidth = 120
     const tooltipXOffset = -tooltipWidth / 2;
@@ -297,7 +307,7 @@ const ScatterPlot = ({
             <DebounceSlider
                 orientation="horizontal"
                 min={1}
-                max={100}
+                max={200}
                 title='Horizontal slider'
                 defaultValue={defaultControlValue}
                 onChange={onChangeXSlider}
