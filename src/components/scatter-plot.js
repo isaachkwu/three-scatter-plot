@@ -7,6 +7,7 @@ import DebounceSlider from './DebounceSlider';
 
 import useWindowDimension from '../hooks/useWindowDimension';
 import defaultColors from '../data/colors-1400.json'
+import { Vector3 } from 'three';
 
 const ScatterPlot = ({
     nodes = [],
@@ -18,8 +19,10 @@ const ScatterPlot = ({
     const [mousePosition, setMousePosition] = useState(null);
     const [selectedNodeColor, setSelectedNodeColor] = useState(null);
 
-    const [xScaleControl, setXScaleControl] = useState(50);
-    const [yScaleControl, setYScaleControl] = useState(50);
+    const defaultControlValue = 50
+
+    const [xScaleControl, setXScaleControl] = useState(defaultControlValue);
+    const [yScaleControl, setYScaleControl] = useState(defaultControlValue);
 
     const onChangeXSlider = (e) => {
         setXScaleControl(e.target.value);
@@ -30,6 +33,9 @@ const ScatterPlot = ({
     }
 
     const mountRef = useRef(null);
+    const pointsRef = useRef(null);
+    const branchesRef = useRef(null);
+    const cameraRef = useRef(null);
 
     useEffect(() => {
         const mount = mountRef.current
@@ -39,7 +45,7 @@ const ScatterPlot = ({
 
         // 1. create camera, scene, renderer
         const fov = 75, near = 0.1, far = 600, aspect = width / height;
-        const camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
+        cameraRef.current = new THREE.PerspectiveCamera(fov, aspect, near, far);
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xcccccc);
         const renderer = new THREE.WebGLRenderer();
@@ -67,7 +73,8 @@ const ScatterPlot = ({
             let _x = -(d3_transform.x - width / 2) / scale;
             let _y = (d3_transform.y - height / 2) / scale;
             let _z = getZFromScale(scale);
-            camera.position.set(_x, _y, _z);
+            cameraRef.current.position.set(_x, _y, _z);
+            // console.log(cameraRef.current.position)
         }
         const d3_zoom = d3.zoom()
             .scaleExtent([getScaleFromZ(far), getScaleFromZ(near)])
@@ -81,19 +88,19 @@ const ScatterPlot = ({
             const initialScale = getScaleFromZ(far);
             const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(initialScale);
             d3_zoom.transform(view, initialTransform);
-            camera.position.set(0, 0, far)
+            cameraRef.current.position.set(0, 0, far)
         }
 
         // 3. create nodes
-        const geometry = new THREE.BufferGeometry();
+        const pointGeo = new THREE.BufferGeometry();
         const xExtent = d3.extent(nodes, node => node.x);
         const yExtent = d3.extent(nodes, node => node.y);
         const xScale = d3.scaleLinear()
             .domain(xExtent)
-            .range([-xScaleControl * 8, xScaleControl * 8]);
+            .range([-400, 400]);
         const yScale = d3.scaleLinear()
             .domain(yExtent)
-            .range([-yScaleControl * 6, yScaleControl * 6]);
+            .range([-300, 300]);
         const vectors = nodes.map((node) => new THREE.Vector3(xScale(node.x), yScale(node.y), 0));
         const uniqueGroup = [...new Set(nodes.map(node => node.group))];
         // console.log(uniqueGroup)
@@ -106,8 +113,8 @@ const ScatterPlot = ({
                 colors.push(c.r, c.g, c.b);
             }
         }
-        geometry.setFromPoints(vectors)
-        geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
+        pointGeo.setFromPoints(vectors)
+        pointGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(colors), 3))
         const circle_sprite = new THREE.TextureLoader().load(
             "https://fastforwardlabs.github.io/visualization_assets/circle-sprite.png"
         );
@@ -118,8 +125,9 @@ const ScatterPlot = ({
             map: circle_sprite,
             transparent: true,
         });
-        const points = new THREE.Points(geometry, pointsMaterial);
-        scene.add(points);
+        pointsRef.current = new THREE.Points(pointGeo, pointsMaterial);
+        pointsRef.current.geometry.attributes.position.needsUpdate = true;
+        scene.add(pointsRef.current);
 
         // 4. Create branches
         const lineMaterial = new THREE.LineBasicMaterial({
@@ -147,9 +155,12 @@ const ScatterPlot = ({
                 )
             });
         }
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints);
-        const lineSeg = new THREE.LineSegments(lineGeometry, lineMaterial);
-        scene.add(lineSeg)
+        const branchesGeo  = new THREE.BufferGeometry().setFromPoints(linePoints);
+        branchesRef.current = new THREE.LineSegments(branchesGeo, lineMaterial);
+        branchesRef.current.geometry.attributes.position.needsUpdate = true;
+        scene.add(branchesRef.current)
+        // branchesRef.current.scale.set(1.5, 1.5, 1);
+        // pointsRef.current.scale.set(1.5, 1.5, 1);
 
         // 5. craete hover interaction
         const raycaster = new THREE.Raycaster();
@@ -162,7 +173,7 @@ const ScatterPlot = ({
             )
         )
         const setUpHover = () => {
-            const view = d3.select(renderer.domElement)
+            d3.select(renderer.domElement)
                 .on("mousemove", (event) => {
                     const [mouseX, mouseY] = d3.pointer(event);
                     const mousePosition = [mouseX, mouseY]
@@ -176,8 +187,8 @@ const ScatterPlot = ({
         }
         const checkIntersects = (mousePosition) => {
             const mouseVector = mouseToThree(...mousePosition);
-            raycaster.setFromCamera(mouseVector, camera);
-            const intersects = raycaster.intersectObject(points);
+            raycaster.setFromCamera(mouseVector, cameraRef.current);
+            const intersects = raycaster.intersectObject(pointsRef.current);
             if (intersects[0]) {
                 const firstIntersect = intersects.sort((a, b) => {
                     if (a.distanceToRay < b.distanceToRay) {
@@ -189,8 +200,9 @@ const ScatterPlot = ({
                     return 0
                 })[0]
                 const selectedNode = nodes[firstIntersect.index];
-                // console.log(selectedNode)
-                highlightPoint(selectedNode);
+                const scale = firstIntersect.object.scale
+                // console.log(scale)
+                highlightPoint(selectedNode, scale);
                 showTooltip(mousePosition, selectedNode);
             } else {
                 removeHighlight();
@@ -199,9 +211,9 @@ const ScatterPlot = ({
         }
         const hoverContainer = new THREE.Object3D();
         scene.add(hoverContainer);
-        const highlightPoint = (node) => {
+        const highlightPoint = (node, scale) => {
             removeHighlight();
-            const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(xScale(node.x), yScale(node.y), 0)]);
+            const geometry = new THREE.BufferGeometry().setFromPoints([new Vector3(xScale(node.x), yScale(node.y) , 0)]);
             const c = node.group === '' ? '#000000' : new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(node.group) % defaultColors.colors.length])
             geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array([
                 c.r, c.g, c.b
@@ -214,6 +226,7 @@ const ScatterPlot = ({
                 transparent: true,
             });
             const point = new THREE.Points(geometry, pointMaterial);
+            point.scale.set(scale.x, scale.y, scale.z)
             hoverContainer.add(point);
         }
 
@@ -237,7 +250,7 @@ const ScatterPlot = ({
         // 6. animate and apply zoom handler
         function animate() {
             requestAnimationFrame(animate);
-            renderer.render(scene, camera);
+            renderer.render(scene, cameraRef.current);
         }
         if (WEBGL.isWebGLAvailable()) {
             animate();
@@ -253,7 +266,28 @@ const ScatterPlot = ({
             mount.removeChild(renderer.domElement);
         }
 
-    }, [nodes, branches, optimizedRendering, height, width, xScaleControl, yScaleControl])
+    }, [nodes, branches, optimizedRendering, height, width])
+
+    useEffect(() => {
+        if (pointsRef.current !== null && branchesRef.current !== null) {
+            const xRatio = xScaleControl / 50;
+            const yRatio = yScaleControl / 50;
+            // const previousXScale = pointsRef.current.scale.x
+            // const previousYScale = branchesRef.current.scale.y
+            pointsRef.current.scale.set(xRatio, yRatio, 1);
+            branchesRef.current.scale.set(xRatio, yRatio, 1);
+            
+            // const currentX = cameraRef.current.position.x
+            // const currentY = cameraRef.current.position.y
+            // const currentZ = cameraRef.current.position.z
+            // cameraRef.current.position.set(
+            //     currentX / previousXScale * xRatio,
+            //     currentY / previousYScale * yRatio,
+            //     currentZ
+            // )
+            // console.log(cameraRef.current.position)
+        }
+    }, [xScaleControl, yScaleControl])
 
     const tooltipWidth = 120
     const tooltipXOffset = -tooltipWidth / 2;
@@ -265,6 +299,7 @@ const ScatterPlot = ({
                 min={1}
                 max={100}
                 title='Horizontal slider'
+                defaultValue={defaultControlValue}
                 onChange={onChangeXSlider}
             />
         </div>
@@ -274,6 +309,7 @@ const ScatterPlot = ({
                 min={1}
                 max={100}
                 title='Vertical slider'
+                defaultValue={defaultControlValue}
                 onChange={onChangeYSlider}
             />
         </div>
@@ -330,39 +366,6 @@ const styles = {
         flexDirection: 'row',
         alignItems: 'center'
     },
-    xSliderTitle: {
-        // backgroundColor: '#00ff00',
-        textAlign: 'left'
-    },
-    ySliderTitle: {
-        transform: 'rotate(90deg)',
-        height: '20px',
-        transformOrigin: '10px 10px',
-        // backgroundColor: '#00ff00',
-        display: 'inline-block',
-        textAlign: 'left'
-    },
-    xSlider: {
-        width: 300,
-        height: 20
-    }, 
-    ySlider: {
-        height: 300,
-        width: 20,
-        '-webkit-appearance': 'slider-vertical',
-        writingMode: 'bt-lr',
-        orient: "vertical"
-    },
-    xInnerSliderContainer: {
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'align-start'
-    },
-    yInnerSliderContainer: {
-        display: 'flex',
-        flexDirection: 'row',
-        alignItems: 'align-start'
-    }
 }
 
 export default ScatterPlot;

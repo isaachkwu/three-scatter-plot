@@ -5,18 +5,19 @@ const DebounceSlider = ({
     title,
     min,
     max,
+    defaultValue,
     onChange
 }) => {
 
-    const [range, setRange] = useState(50)
+    const [range, setRange] = useState(defaultValue)
     const timeout = useRef(null)
 
     const handleChangeDebounce = (e) => {
         setRange(e.target.value);
-        clearTimeout(timeout.current);
-        timeout.current = setTimeout(() => {
+        // clearTimeout(timeout.current);
+        // timeout.current = setTimeout(() => {
             onChange(e)
-        }, 100);
+        // }, 100);
     };
 
     useEffect(() => () => {
@@ -78,7 +79,7 @@ const styles = {
     ySlider: {
         height: 300,
         width: 20,
-        '-webkit-appearance': 'slider-vertical',
+        WebkitAppearance: 'slider-vertical',
         writingMode: 'bt-lr',
         orient: "vertical"
     },
