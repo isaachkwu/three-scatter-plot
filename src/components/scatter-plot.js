@@ -310,20 +310,21 @@ const ScatterPlot = ({
             const previousYScale = branchesRef.current.scale.y
             pointsRef.current.scale.set(xRatio, yRatio, 1);
             branchesRef.current.scale.set(xRatio, yRatio, 1);
+
+            const currentThreeX = cameraRef.current.position.x;
+            const currentThreeY = cameraRef.current.position.y;
+            const currentThreeZ = cameraRef.current.position.z;
             
-            const currentX = cameraRef.current.position.x
-            const currentY = cameraRef.current.position.y
-            const currentZ = cameraRef.current.position.z
-            cameraRef.current.position.set(
-                currentX / previousXScale * xRatio,
-                currentY / previousYScale * yRatio,
-                currentZ
-            )
+            const targetThreeX = currentThreeX / previousXScale * xRatio
+            const targetThreeY = currentThreeY / previousYScale * yRatio
+            const currentScale = getScaleFromZ(currentThreeZ);
+
+            const d3X = -(targetThreeX * currentScale) + width / 2
+            const d3Y = targetThreeY * currentScale + height / 2
             
-            // const view = d3.select(rendererRef.current.domElement)
-            // const currentScale = getScaleFromZ(currentZ);
-            // const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(currentScale);
-            // d3ZoomRef.current.transform(view, initialTransform);
+            const view = d3.select(rendererRef.current.domElement)
+            const initialTransform = d3.zoomIdentity.translate(d3X, d3Y).scale(currentScale);
+            d3ZoomRef.current.transform(view, initialTransform);
         }
     }, [getScaleFromZ, height, width, xScaleControl, yScaleControl])
 
