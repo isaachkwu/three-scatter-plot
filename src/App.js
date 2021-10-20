@@ -29,8 +29,8 @@ function App() {
         // group={RealData.group}
 
         // data v2
-        nodes={nodes}
-        branches={branches}
+        node={nodes}
+        branch={branches}
       />
     </div>
   );

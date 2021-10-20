@@ -10,8 +10,8 @@ import defaultColors from '../data/colors-1400.json'
 import { Vector3 } from 'three';
 
 const ScatterPlot = ({
-    nodes = [],
-    branches = [],
+    node = [],
+    branch = [],
     optimizedRendering = false
 }) => {
     const { width, height } = useWindowDimension();
@@ -63,6 +63,34 @@ const ScatterPlot = ({
         rendererRef.current.setSize(width, height);
         mount.appendChild(rendererRef.current.domElement)
 
+        // additional: add double nodes and branches
+        const addedX = d3.max(node, node => node.x) + 100;
+        const nodes = [
+            ...node,
+            ...node.map(node => ({
+                ...node,
+                x: node.x + addedX
+            }))
+        ]
+
+        const branches = {
+            vertical: [
+                ...branch.vertical,
+                ...branch.vertical.map(branch => ([
+                    branch[0] + addedX,
+                    branch[1],
+                    branch[2]
+                ]))
+            ],
+            horizontal: [
+                ...branch.horizontal,
+                ...branch.horizontal.map(branch => ([
+                    branch[0],
+                    branch[1] + addedX,
+                    branch[2] + addedX
+                ]))
+            ]
+        }
         // 2. create zoom/pan handler
 
         const getZFromScale = (scale) => {
@@ -272,7 +300,7 @@ const ScatterPlot = ({
             mount.removeChild(rendererRef.current.domElement);
         }
 
-    }, [nodes, branches, optimizedRendering, height, width, aspect, getScaleFromZ])
+    }, [node, branch, optimizedRendering, height, width, aspect, getScaleFromZ])
 
     useEffect(() => {
         if (pointsRef.current !== null && branchesRef.current !== null) {
@@ -307,7 +335,7 @@ const ScatterPlot = ({
             <DebounceSlider
                 orientation="horizontal"
                 min={1}
-                max={200}
+                max={500}
                 title='Horizontal slider'
                 defaultValue={defaultControlValue}
                 onChange={onChangeXSlider}
