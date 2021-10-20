@@ -3,11 +3,12 @@ import * as THREE from 'three';
 import { WEBGL } from 'three/examples/jsm/WebGL'
 import * as d3 from 'd3';
 
-import DebounceSlider from './DebounceSlider';
+import Slider from '../slider/Slider';
 
-import useWindowDimension from '../hooks/useWindowDimension';
-import defaultColors from '../data/colors-1400.json'
-import { Vector3 } from 'three';
+import useWindowDimension from '../../hooks/useWindowDimension';
+import defaultColors from '../../data/colors-1400.json'
+
+import './ScatterPlot.css';
 
 const ScatterPlot = ({
     node = [],
@@ -24,13 +25,13 @@ const ScatterPlot = ({
     const [xScaleControl, setXScaleControl] = useState(defaultControlValue);
     const [yScaleControl, setYScaleControl] = useState(defaultControlValue);
 
-    const onChangeXSlider = (e) => {
-        setXScaleControl(e.target.value);
-    }
+    const onChangeXSlider = useCallback((value) => {
+        setXScaleControl(value);
+    }, [])
 
-    const onChangeYSlider = (e) => {
-        setYScaleControl(e.target.value);
-    }
+    const onChangeYSlider = useCallback((value) => {
+        setYScaleControl(value);
+    }, [])
 
     const mountRef = useRef(null);
     const pointsRef = useRef(null);
@@ -52,11 +53,17 @@ const ScatterPlot = ({
         return scale;
     }, [height])
 
+    const resetCamera = () => {
+        const view = d3.select(rendererRef.current.domElement)
+        const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(getScaleFromZ(far));
+        d3ZoomRef.current.transform(view, initialTransform);
+    }
+
     useEffect(() => {
         const mount = mountRef.current
 
         // 1. create camera, scene, renderer
-        cameraRef.current = new THREE.PerspectiveCamera(fov, aspect, near, far);
+        cameraRef.current = new THREE.PerspectiveCamera(fov, aspect, near, far + 1);
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0xcccccc);
         rendererRef.current = new THREE.WebGLRenderer();
@@ -64,33 +71,40 @@ const ScatterPlot = ({
         mount.appendChild(rendererRef.current.domElement)
 
         // additional: add double nodes and branches
-        const addedX = d3.max(node, node => node.x) + 100;
-        const nodes = [
-            ...node,
-            ...node.map(node => ({
+        const doublesData = (node, branch) => {
+            const addedX = d3.max(node, node => node.x) + 100;
+            const nodes = [
                 ...node,
-                x: node.x + addedX
-            }))
-        ]
-
-        const branches = {
-            vertical: [
-                ...branch.vertical,
-                ...branch.vertical.map(branch => ([
-                    branch[0] + addedX,
-                    branch[1],
-                    branch[2]
-                ]))
-            ],
-            horizontal: [
-                ...branch.horizontal,
-                ...branch.horizontal.map(branch => ([
-                    branch[0],
-                    branch[1] + addedX,
-                    branch[2] + addedX
-                ]))
+                ...node.map(node => ({
+                    ...node,
+                    x: node.x + addedX
+                }))
             ]
+
+            const branches = {
+                vertical: [
+                    ...branch.vertical,
+                    ...branch.vertical.map(branch => ([
+                        branch[0] + addedX,
+                        branch[1],
+                        branch[2]
+                    ]))
+                ],
+                horizontal: [
+                    ...branch.horizontal,
+                    ...branch.horizontal.map(branch => ([
+                        branch[0],
+                        branch[1] + addedX,
+                        branch[2] + addedX
+                    ]))
+                ]
+            }
+            return {nodes, branches}
         }
+        let {nodes, branches} = doublesData(node, branch)
+        const result = doublesData(nodes, branches)
+        nodes = result.nodes
+        branches = result.branches
         // 2. create zoom/pan handler
 
         const getZFromScale = (scale) => {
@@ -118,7 +132,7 @@ const ScatterPlot = ({
             const view = d3.select(rendererRef.current.domElement)
                 .call(d3ZoomRef.current);
             const initialScale = getScaleFromZ(far);
-            const initialTransform = d3.zoomIdentity.translate(width / 2  , height / 2).scale(initialScale);
+            const initialTransform = d3.zoomIdentity.translate(width / 2, height / 2).scale(initialScale);
             d3ZoomRef.current.transform(view, initialTransform);
             // cameraRef.current.position.set(0, 0, far)
         }
@@ -187,7 +201,7 @@ const ScatterPlot = ({
                 )
             });
         }
-        const branchesGeo  = new THREE.BufferGeometry().setFromPoints(linePoints);
+        const branchesGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
         branchesRef.current = new THREE.LineSegments(branchesGeo, lineMaterial);
         branchesRef.current.geometry.attributes.position.needsUpdate = true;
         scene.add(branchesRef.current)
@@ -247,7 +261,7 @@ const ScatterPlot = ({
         scene.add(hoverContainer);
         const highlightPoint = (node, scale) => {
             removeHighlight();
-            const geometry = new THREE.BufferGeometry().setFromPoints([new Vector3(xScale(node.x), yScale(node.y) , 0)]);
+            const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(xScale(node.x), yScale(node.y), 0)]);
             const c = node.group === '' ? '#000000' : new THREE.Color(defaultColors.colors[uniqueGroup.indexOf(node.group) % defaultColors.colors.length])
             geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array([
                 c.r, c.g, c.b
@@ -314,14 +328,14 @@ const ScatterPlot = ({
             const currentThreeX = cameraRef.current.position.x;
             const currentThreeY = cameraRef.current.position.y;
             const currentThreeZ = cameraRef.current.position.z;
-            
+
             const targetThreeX = currentThreeX / previousXScale * xRatio
             const targetThreeY = currentThreeY / previousYScale * yRatio
             const currentScale = getScaleFromZ(currentThreeZ);
 
             const d3X = -(targetThreeX * currentScale) + width / 2
             const d3Y = targetThreeY * currentScale + height / 2
-            
+
             const view = d3.select(rendererRef.current.domElement)
             const initialTransform = d3.zoomIdentity.translate(d3X, d3Y).scale(currentScale);
             d3ZoomRef.current.transform(view, initialTransform);
@@ -333,17 +347,17 @@ const ScatterPlot = ({
     const tooltipYOffset = 30
     return <>
         <div style={styles.xSliderContainer}>
-            <DebounceSlider
+            <Slider
                 orientation="horizontal"
                 min={1}
-                max={500}
+                max={800}
                 title='Horizontal slider'
                 defaultValue={defaultControlValue}
                 onChange={onChangeXSlider}
             />
         </div>
         <div style={styles.ySliderContainer}>
-            <DebounceSlider
+            <Slider
                 orientation="vertical"
                 min={1}
                 max={100}
@@ -351,6 +365,9 @@ const ScatterPlot = ({
                 defaultValue={defaultControlValue}
                 onChange={onChangeYSlider}
             />
+        </div>
+        <div className='buttonContainer'>
+            <button className='resetButton' onClick={resetCamera}>reset camera</button>
         </div>
         <div style={{
             display: selectedNode ? "flex" : "none",
